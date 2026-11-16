@@ -8,12 +8,15 @@ most two requiring user action.
 
 ## Installation
 
+Agents: follow [INSTALL.md](INSTALL.md) for installation, verification, and cron setup.
+
 1. Install this directory as `personal-pulse-generation` in your active Hermes
    profile. Back up an existing installation before replacing it. Resolve the
    absolute `skill_dir` through skill discovery and set `SKILL_DIR` to that path.
-2. Install `cooperative-answering` and `codex-gpt-image` using their own setup
-   instructions. Make Python and the image executor's dependencies available in
-   the environment selected by `paths.python_executable`.
+2. Install [cooperative-answering](https://github.com/Kuro96/cooperative-answering).
+   For images, install `codex-gpt-image` or another image-generation skill that
+   meets [the image contract](references/image-production.md). Make Python and
+   the chosen skill's dependencies available in the selected environment.
 3. Copy `config.example.json` to `config.local.json` beside `SKILL.md`. Keep the
    example generic and place deployment values in the local copy. Set private
    file permissions appropriate to your operating system and scheduler account.
@@ -60,7 +63,7 @@ needed for their phase.
 | `paths.journal_dir` | Durable publication journals directory |
 | `paths.scratch_dir` | Private scratch directory; runtime adds `hermes-pulse` |
 | `paths.workdir` | Existing working directory for the scheduled process |
-| `paths.image_executor` | Installed image executor script |
+| `paths.image_executor` | Codex executor script, or `null` for another image skill |
 | `paths.python_executable` | Python executable or executable path |
 | `paths.env_file` | `null`, or the path to an explicitly selected private environment file |
 | `sources.personal_context_dir` | `null`, or an authorized personal-context directory |
@@ -112,7 +115,7 @@ activation. Verify those in the intended environment before enabling scheduled
 publication. A completed matching journal produces `[SILENT]`; unresolved outcomes
 produce a reader-safe `PULSE_SEND_FAILED` report.
 
-## Source privacy and public export
+## Source privacy and Git maintenance
 
 `config.example.json` is the shareable template. `config.local.json`, configuration
 output, personal context, real payloads, journals, generated images, and review
@@ -125,20 +128,19 @@ history still contains earlier versions. Historical exposure needs separate
 history cleanup and credential rotation, plus coordination for existing clones.
 Current-tree review and archive checks do not establish remote-history audit status.
 
-Once the reviewed public files are committed, use Git's standard archive command:
+Maintain and distribute the source through this Git repository. Review the staged
+file list and diff before each commit; keep deployment values in ignored files.
+Install dependencies from their own repositories. Update an installed checkout
+with `git pull --ff-only` after reviewing local changes, then run the offline tests
+and compare the deployed job against the current cron template. See [INSTALL.md](INSTALL.md).
 
 ```bash
 git -C "$SKILL_DIR" status --short
+git -C "$SKILL_DIR" diff --cached
 git -C "$SKILL_DIR" ls-files -- config.local.json .env reports state journals
-# The preceding listing should be empty for private deployment data.
-git -C "$SKILL_DIR" archive --format=zip --prefix=personal-pulse-generation/ \
-  --output="$ARCHIVE" HEAD
 ```
 
-The committed source is already shareable. `git archive` packages that source
-revision. Compressing the whole working directory also includes ignored local
-files, so use the versioned tree for distribution. Install dependencies separately
-through their documented setup procedures.
+The last command should list no private deployment files.
 
 ## Maintenance
 
@@ -146,4 +148,4 @@ Keep `SKILL.md`, references, canonical prompt, runtime contract, and authorized 
 configuration aligned. Preserve historical journals and payload bindings for
 resumption and deduplication. Offline checks use isolated state and journals;
 live publication requires its own authorized run. See
-`references/maintenance-and-portability.md` for verification and export details.
+`references/maintenance-and-portability.md` for verification and maintenance details.

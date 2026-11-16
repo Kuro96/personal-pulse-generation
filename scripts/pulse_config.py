@@ -73,7 +73,7 @@ def load_config(path: str | Path | None = None) -> dict:
     if targets[0][0] != targets[1][0] or targets[0][1] == targets[1][1]:
         raise ConfigError("delivery targets must name distinct threads in the same supergroup")
     for field in FIELDS["paths"] - {"python_executable"}:
-        config["paths"][field] = expand_path(config["paths"][field], f"paths.{field}", nullable=field == "env_file")
+        config["paths"][field] = expand_path(config["paths"][field], f"paths.{field}", nullable=field in {"env_file", "image_executor"})
     executable = string(config["paths"]["python_executable"], "paths.python_executable")
     executable = os.path.expanduser(os.path.expandvars(executable))
     if "$" in executable or executable.startswith("~"):

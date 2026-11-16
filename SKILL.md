@@ -34,7 +34,8 @@ Read the references needed for the current phase:
 - `references/payload-contract.md`: schema 1.1 fields and runtime validation.
 - `references/image-production.md`: collage prompt, executor, verification, fallback.
 - `references/native-publication.md`: commands, reader surfaces, journals, recovery.
-- `references/maintenance-and-portability.md`: scoped maintenance and export.
+- `references/maintenance-and-portability.md`: scoped maintenance and Git distribution.
+- `INSTALL.md`: agent installation, dependency sources, and paused cron deployment.
 - `references/pulse-technical-detail-deepdives.md`: evidence-based card follow-ups.
 - `templates/daily_pulse_cron_prompt.md`: canonical daily execution prompt.
 
@@ -55,10 +56,12 @@ Read the references needed for the current phase:
 | Authentication | environment variable named by `token_env`; optional `paths.env_file` |
 
 Resolve `skill_dir` from the installed skill. Load `PULSE_CONFIG` when set,
-otherwise `skill_dir/config.local.json`. Run `scripts/pulse_config.py [--config PATH]
+otherwise `skill_dir/config.local.json`. Agents installing this skill follow
+`INSTALL.md`; `scripts/pulse_cron.py` renders private scheduler arguments from
+`templates/cron_job.example.json`. Run `scripts/pulse_config.py [--config PATH]
 check` before collection; `show` emits resolved private configuration for local
 agent consumption. Treat its output as private. Every runtime command uses this
-same configuration. See `README.md` for installation and safe export.
+same configuration. See `INSTALL.md` for installation and `README.md` for Git maintenance.
 
 Confirm the deployed scheduler's effective timezone and next occurrence against
 `user.timezone` and `schedule.cron`, including any host-timezone conversion.
@@ -68,8 +71,8 @@ Retries reuse it. Actual selection is 1..ceiling; zero produces a visible
 `PULSE_SEND_FAILED: no qualified content`. Completion requires every selected
 card and the single feed. A reduced complete edition is the day's edition.
 
-Published editions use actual cover images by default, generated through
-`codex-gpt-image`. Details precede the feed. Current messages are retained.
+Published editions use actual cover images by default. Use `codex-gpt-image`
+or another installed image-generation skill meeting the image-production contract. Details precede the feed. Current messages are retained.
 Historical publication journals remain durable duplicate-prevention evidence.
 
 ## What qualifies
@@ -166,7 +169,7 @@ feedback. Run the publisher's own `cooperative-answering` edit after merging dra
 
 Finalize selected content and privacy-safe briefs first. Pulse chooses style,
 palette, layout, and panel order, then passes the complete prompt unchanged to the
-style-neutral `codex-gpt-image` executor. Verify the exact decoded collage visually;
+selected image-generation skill (`codex-gpt-image` or an equivalent). Verify the exact decoded collage visually;
 keep it for the feed and crop that file for individual cards. A one-card edition
 uses the same 1×1 image for both surfaces.
 

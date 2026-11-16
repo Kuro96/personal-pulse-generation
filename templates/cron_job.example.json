@@ -1,0 +1,31 @@
+{
+  "action": "create",
+  "name": "${job_name}",
+  "schedule": "${cron}",
+  "prompt": "Rendered by scripts/pulse_cron.py from the installed canonical template and private config.",
+  "skills": [
+    "cooperative-answering",
+    "personal-pulse-generation",
+    "${image_skill}"
+  ],
+  "enabled_toolsets": [
+    "terminal",
+    "file",
+    "session_search",
+    "cronjob",
+    "browser",
+    "vision",
+    "web",
+    "search",
+    "delegation",
+    "skills"
+  ],
+  "workdir": "${workdir}",
+  "deliver": "${feed_target}",
+  "failure_deliver": "${feed_target}",
+  "no_agent": false,
+  "continuity": false,
+  "attach_to_session": false,
+  "paused": true,
+  "paused_reason": "Awaiting installation verification and owner activation"
+}

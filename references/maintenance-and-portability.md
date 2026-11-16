@@ -15,7 +15,7 @@ Keep these aligned when behavior changes:
    schedule, and result routes, when deployment is authorized.
 
 The job reads the canonical template each run, loads `personal-pulse-generation`
-and `cooperative-answering`, and loads `codex-gpt-image` for images. Its normal
+and `cooperative-answering`, and loads the selected image-generation skill. Its normal
 collection needs session search, files, scoped terminal reads, web retrieval,
 vision, and delegation where available. Derive the workdir, schedule, timezone,
 job name, and native targets from the same private configuration used by the runtime.
@@ -52,35 +52,32 @@ Keep audit output compact: changed behavior, evidence exercised, failures, and
 remaining deployment work. Diagnose the specific Pulse component rather than
 turning a content review into an unrelated system-wide audit.
 
-## Export
+## Git distribution
 
-Keep source, documentation, tests and `config.example.json` shareable in the Git
-index. Store deployment values in ignored local configuration and runtime data
-outside the source tree. After reviewing and committing the public tree, use:
-
-```bash
-git -C "$SKILL_DIR" archive --format=zip --prefix=personal-pulse-generation/ \
-  --output="$ARCHIVE" HEAD
-```
-
-`SKILL_DIR` comes from skill discovery; `ARCHIVE` is an absolute output path.
-Inspect the indexed file list before sharing. Dependencies are installed
-separately through their documented setup procedures.
+Maintain the installed source directory as the repository checkout. Commit source,
+documentation, tests, and `config.example.json`; keep deployment values in ignored
+local configuration and runtime data outside the tree. Use Git clone/pull as the
+installation and update path. Review the staged file list and diff before pushing.
+Dependencies are installed separately; see `INSTALL.md` for their sources and the
+private cron-argument renderer. Keep one canonical source tree rather than a
+separately maintained distribution package.
 
 Keep local reports and configuration output in private storage. Git ignore rules
 protect untracked files; previously tracked private files require `git rm --cached`
 and a reviewed commit. Historical exposure requires separate history cleanup and
-credential rotation. A current-tree or archive review establishes its own scope;
+credential rotation. A current-tree review establishes its own scope;
 remote history requires a separate audit.
 
 Recipient setup establishes their user, context permissions, storage paths,
 timezone/schedule, confirmed card/feed targets, image policy, and preferences.
-Use the recipient's active Hermes Codex authorization through the executor. Back up
+Use the selected image skill's supported authentication; the Codex executor uses
+the recipient's active Hermes Codex authorization. Back up
 existing skill installations before replacing them; update an existing job's
 prompt and tools along with its attached skills.
 
 Before activation, compile helpers, exercise validation/rendering and offline send
-with isolated state/journals, and run the image helper's `generate --dry-run` using
-a caller-owned prompt and explicit model/quality/size/format/timeout. Read back the
+with isolated state/journals, and run the chosen image skill's supported configuration/dry-run checks. For
+the Codex helper, use `generate --dry-run` with a caller-owned prompt and explicit
+model/quality/size/format/timeout. Read back the
 configured job. Live delivery begins under the recipient's approved schedule or
 separately authorized run.

@@ -59,12 +59,16 @@ load `cooperative-answering` in its own context.
    provenance, QA discussion, and recurring 已交付洞察/摘要/为什么现在 labels out of
    the reading format. The publisher applies its own cooperative-answering edit
    to the complete merged detail text and short feed teasers.
-7. Finalize the selection and privacy-safe visual plan, then load codex-gpt-image.
-   Pulse supplies one complete unchanged collage prompt to
+7. Finalize the selection and privacy-safe visual plan, then load the image skill
+   selected in the job prompt and attached skills. It may be codex-gpt-image or
+   another image-generation skill meeting references/image-production.md.
+   With codex-gpt-image, supply one complete unchanged collage prompt to
    `paths.image_executor` via `paths.python_executable`, invoking `generate`
    using `--prompt-file`, `--model gpt-image-2 --quality high`, explicit `--size`,
    `--output-format png --timeout 600`, and a unique run-local `--out`. Follow the
-   image reference for grid and attempts. Verify the exact decoded collage visually,
+   image reference for grid and attempts. With another image skill, use its
+   documented invocation and produce the same local PNG and decoded-dimensions
+   contract. Verify the exact decoded collage visually,
    preserve it as feed_cover_image, and crop that file using actual_dimensions.
    A one-card edition shares the same 1×1 image. Approved opt-out/force-majeure text
    fallback records the concrete reason internally and uses the same native send.

@@ -1,6 +1,7 @@
 # Image production
 
-Load `codex-gpt-image` for image execution after selected content and privacy-safe
+Load the image-generation skill selected at installation (`codex-gpt-image` or
+another installed image-generation skill) after selected content and privacy-safe
 briefs are final. Pulse owns style, palette, composition, typography policy, grid,
 panel order, and the complete prompt. The executor receives that prompt unchanged.
 
@@ -21,7 +22,18 @@ attempt names such as `pulse_YYYYMMDD_collage_attempt_01.prompt.txt` and `.png`.
 Unused cells are decorative and discarded during cropping. Choose an explicit
 size suitable for the composition; `1536x1024` suits 3×2, `2048x1024` suits 4×2.
 
-## Executor
+## Image-skill contract
+
+也可使用其他用于生图的 skill。The selected skill must accept the complete
+privacy-safe collage prompt, produce a locally saved PNG under `PULSE_RUN_ROOT`,
+and report dimensions verified by fully decoding the actual image. The agent
+visually checks that file and crops the approved collage in card order. Use the
+chosen skill's documented invocation and authentication. Set `paths.image_executor`
+to `null` when it has no Codex-compatible script. The runtime consumes the resulting
+files and metadata; it does not invoke the image provider. Record the chosen skill
+in the cron job's attached skills and prompt.
+
+## Codex executor
 
 Use `PYTHON` and `IMAGE_EXECUTOR` resolved from configuration as shown in the
 publication reference, with `RUN_DIR`, `DAY_KEY`, `ATTEMPT`, and `SIZE` set for the current run:
