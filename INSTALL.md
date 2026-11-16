@@ -149,6 +149,13 @@ python3 -B "$SKILL_DIR/scripts/pulse_cron.py" \
   --image-skill "$IMAGE_SKILL" > "$JOB_DIR/cron.local.json"
 ```
 
+Check the chosen image skill's required tools against the generated
+`enabled_toolsets`. For tools outside the baseline, repeat `--extra-toolset` in
+the rendering command, for example `--extra-toolset image_gen` or the exact
+installed provider/plugin toolset name. Verify those tools are available to the
+scheduled agent before activation. Loading a skill supplies instructions; its
+execution tools also need to be enabled.
+
 The generated JSON contains private paths and destinations. It is a tool-argument
 object, not the scheduler's internal storage format.
 

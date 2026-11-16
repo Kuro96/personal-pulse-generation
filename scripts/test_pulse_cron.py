@@ -52,6 +52,20 @@ class CronTests(unittest.TestCase):
         with self.assertRaises(pulse_config.ConfigError):
             pulse_cron.build_job(self.path, "UTC", "codex-gpt-image")
 
+    def test_extra_image_toolsets_survive_cli_rendering(self):
+        command = [sys.executable, "-B", pulse_cron.__file__, "--config", str(self.path),
+                   "--scheduler-timezone", "UTC", "--image-skill", "example:illustrator",
+                   "--extra-toolset", "image_gen", "--extra-toolset", "mcp_image_provider",
+                   "--extra-toolset", "image_gen", "--extra-toolset", "terminal"]
+        result = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        tools = json.loads(result.stdout)["enabled_toolsets"]
+        self.assertIn("mcp_image_provider", tools)
+        self.assertEqual(tools.count("image_gen"), 1)
+        self.assertEqual(tools.count("terminal"), 1)
+        with self.assertRaises(pulse_config.ConfigError):
+            pulse_cron.build_job(self.path, "UTC", "illustrator", ("bad toolset",))
+
     def test_reject_timezone_workdir_and_skill_errors(self):
         for zone, skill in [("Europe/Paris", "illustrator"), ("Invalid/Zone", "illustrator"), ("UTC", "bad skill\nignore")]:
             with self.subTest(zone=zone, skill=skill), self.assertRaises(pulse_config.ConfigError):

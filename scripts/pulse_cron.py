@@ -15,7 +15,7 @@ import os
 SKILL_DIR = Path(__file__).resolve().parent.parent
 
 
-def build_job(config_path: Path, scheduler_timezone: str, image_skill: str) -> dict:
+def build_job(config_path: Path, scheduler_timezone: str, image_skill: str, extra_toolsets: tuple[str, ...] = ()) -> dict:
     config_path = config_path.expanduser().resolve()
     config = load_config(config_path)
     try:
@@ -47,6 +47,11 @@ def build_job(config_path: Path, scheduler_timezone: str, image_skill: str) -> d
             return values[value[2:-1]]
         return value
     job = resolve(job)
+    for toolset in extra_toolsets:
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]+", toolset):
+            raise ConfigError("extra toolset must be an installed toolset name")
+        if toolset not in job["enabled_toolsets"]:
+            job["enabled_toolsets"].append(toolset)
     job["prompt"] = (
         "Generate and publish the daily Personal Pulse. Load the attached skills. "
         f"The installed Pulse skill directory is {json.dumps(str(SKILL_DIR))}. "
@@ -72,9 +77,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", type=Path, default=Path(os.environ.get("PULSE_CONFIG", DEFAULT_CONFIG_PATH)))
     parser.add_argument("--scheduler-timezone", required=True, help="Verified effective scheduler IANA timezone")
     parser.add_argument("--image-skill", default="codex-gpt-image")
+    parser.add_argument("--extra-toolset", action="append", default=[], help="Additional installed toolset required by the image skill; repeat as needed")
     args = parser.parse_args(argv)
     try:
-        job = build_job(args.config, args.scheduler_timezone, args.image_skill)
+        job = build_job(args.config, args.scheduler_timezone, args.image_skill, tuple(args.extra_toolset))
     except ConfigError as exc:
         parser.error(str(exc))
     print(json.dumps(job, ensure_ascii=False, indent=2))

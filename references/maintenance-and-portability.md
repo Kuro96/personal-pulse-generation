@@ -15,7 +15,11 @@ Keep these aligned when behavior changes:
    schedule, and result routes, when deployment is authorized.
 
 The job reads the canonical template each run, loads `personal-pulse-generation`
-and `cooperative-answering`, and loads the selected image-generation skill. Its normal
+and `cooperative-answering`, and loads the selected image-generation skill.
+Match the job's toolset allowlist to that skill's execution requirements; use
+`pulse_cron.py --extra-toolset NAME` for each additional installed toolset.
+Skill attachment provides instructions, while the allowlist controls callable tools.
+Its normal
 collection needs session search, files, scoped terminal reads, web retrieval,
 vision, and delegation where available. Derive the workdir, schedule, timezone,
 job name, and native targets from the same private configuration used by the runtime.
