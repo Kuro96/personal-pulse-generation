@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "user": {"name": "Example User", "language": "zh-CN", "timezone": "UTC"},
+  "delivery": {"cards_target": null, "feed_target": null},
+  "paths": {
+    "state_file": "~/.hermes/pulse/state.json",
+    "journal_dir": "~/.hermes/pulse/journals",
+    "scratch_dir": "~/.hermes/cache/scratch",
+    "workdir": "~/.hermes",
+    "image_executor": "~/.hermes/skills/creative/codex-gpt-image/scripts/hermes_codex_image.py",
+    "python_executable": "python3",
+    "env_file": null
+  },
+  "sources": {"personal_context_dir": null, "notes_roots": []},
+  "schedule": {"cron": "30 7 * * *", "job_name": "daily-personal-pulse"},
+  "token_env": "TELEGRAM_BOT_TOKEN"
+}

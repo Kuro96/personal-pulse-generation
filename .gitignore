@@ -1,0 +1,30 @@
+# Deployment identity and credentials
+config.local.json
+config.local.*
+*.local.json
+.env
+.env.*
+!.env.example
+
+# Private runtime data and local reports
+private/
+state/
+journals/
+runs/
+reports/
+exports/
+*.zip
+*.tar
+*.tar.gz
+*.log
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+
+# Python and editor artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.DS_Store
