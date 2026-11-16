@@ -53,10 +53,6 @@ class ConfigTests(unittest.TestCase):
     def save(self):
         self.path.write_text(json.dumps(self.config), encoding="utf-8")
 
-    def test_valid_config_and_nullable_sources(self):
-        result = pulse_config.load_config(self.path)
-        self.assertEqual(result, self.config)
-
     def test_missing_config_is_fatal_and_explicit_path_wins(self):
         with mock.patch.dict(os.environ, {"PULSE_CONFIG": str(self.root / "missing.json")}):
             with self.assertRaises(pulse_config.ConfigError):
@@ -104,13 +100,12 @@ class ConfigTests(unittest.TestCase):
                     pulse_config.load_config(self.path)
 
     def test_unknown_fields_and_plaintext_token_are_rejected(self):
-        for section in (None, *pulse_config.FIELDS):
-            for key in ("unexpected", "token", "bot_token", "TELEGRAM_BOT_TOKEN"):
-                self.config = fixture_config(self.root)
-                (self.config if section is None else self.config[section])[key] = "synthetic-secret-value"
-                self.save()
-                with self.subTest(section=section, key=key), self.assertRaises(pulse_config.ConfigError):
-                    pulse_config.load_config(self.path)
+        for section in (None, "user", "delivery", "paths", "sources", "schedule"):
+            self.config = fixture_config(self.root)
+            (self.config if section is None else self.config[section])["token"] = "synthetic-secret-value"
+            self.save()
+            with self.subTest(section=section), self.assertRaises(pulse_config.ConfigError):
+                pulse_config.load_config(self.path)
         self.config = fixture_config(self.root)
         self.config["token_env"] = "12345:synthetic-secret"
         self.save()

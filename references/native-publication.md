@@ -95,7 +95,10 @@ compact teaser; the runtime constructs title links from the configured target an
 journaled message IDs.
 A compact teaser shortened for space ends with a visible ellipsis. Keep the
 refresh-shortfall and image-fallback notes short and reader-safe when applicable.
-Natural-language replies supply feedback.
+Each card detail carries **展开讲讲** and **关闭按钮**. The bundled callback
+plugin routes expansion as a reply to that exact card and removes buttons directly
+on close. The feed remains a linked summary. Natural-language replies supply
+preference feedback.
 
 ## Send
 

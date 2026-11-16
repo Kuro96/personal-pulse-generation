@@ -39,6 +39,22 @@ Read the references needed for the current phase:
 - `references/pulse-technical-detail-deepdives.md`: evidence-based card follow-ups.
 - `templates/daily_pulse_cron_prompt.md`: canonical daily execution prompt.
 
+## Card follow-ups
+
+A user clicking **展开讲讲** asks for a deeper explanation of the quoted card.
+Answer that request directly: explain the subject, supply useful background,
+mechanisms and concrete examples, and verify sources when needed. Anchor the
+answer to the clicked card and its cited material. Use
+`references/pulse-technical-detail-deepdives.md` for technical topics. This is a
+card-specific conversation; the daily publication sequence applies to scheduled
+or explicitly requested editions.
+
+The bundled `pulse-card-actions` plugin routes this click as the authorized
+reader's message with the original card as reply context. **关闭按钮** removes
+all inline buttons from that card through Telegram immediately, outside the agent
+turn. Card content and publication journals remain available. See `INSTALL.md`
+for installing the plugin alongside the skill.
+
 ## Daily contract
 
 | Setting | Value |

@@ -56,6 +56,42 @@ that same collage. Record its exact installed skill name for step 5.
 
 Verify the skills are discoverable through `skill_view` or `hermes skills list`.
 
+### Install the bundled Telegram card-action plugin
+
+The repository's `plugin/` directory supplies **展开讲讲** and **关闭按钮**.
+It registers a scoped callback handler with Hermes's existing Telegram adapter.
+Expansion enters the normal agent conversation with the clicked card quoted;
+closing edits only that message's keyboard directly through Telegram, so it works
+while the agent is busy. Telegram stores the removed keyboard across restarts.
+
+Set `PLUGINS_DIR` to the verified active profile's plugin directory. For a fresh
+installation, link the plugin from the canonical skill checkout and enable it:
+
+```sh
+: "${PLUGINS_DIR:?Set the active profile plugins directory}"
+mkdir -p "$PLUGINS_DIR"
+ln -s "$SKILL_DIR/plugin" "$PLUGINS_DIR/pulse-card-actions"
+hermes plugins enable pulse-card-actions
+hermes plugins list
+```
+
+If that destination exists, inspect it and preserve unrelated contents before
+updating. The symlink keeps plugin code in this repository. Confirm the enable
+result reports Telegram callbacks activated in the running gateway; older Hermes
+versions may require an operator restart. The callback integration requires
+`register_telegram_handler` and the Telegram adapter's callback authorization and
+message-event APIs. Test against the installed Hermes environment:
+
+```sh
+# HERMES_PYTHON is the Python executable used by the installed Hermes gateway.
+"$HERMES_PYTHON" -B -m unittest discover -s "$SKILL_DIR/plugin" -p 'test_*.py' -v
+```
+
+After plugin code updates, restart the gateway through its supported operator
+workflow so already-wired callbacks load the new revision. To uninstall, disable
+`pulse-card-actions`, restart to unload wired handlers, and remove the plugin's
+symlink. Preserve the skill's private configuration and publication journals.
+
 ## 3. Create private configuration
 
 For a fresh installation, create the local file without overwriting an existing
@@ -177,7 +213,7 @@ Agent deployment procedure:
 5. Read back the exact job. Check attached skills, tool availability, absolute
    skill/config paths, workdir, effective timezone, schedule and next occurrence,
    and both `deliver` and `failure_deliver` against `delivery.feed_target`.
-6. Confirm bot permissions, image setup, and offline checks. With the recipient's
+6. Confirm bot permissions, card-action plugin activation, image setup, and offline checks. With the recipient's
    scheduling approval, resume the new job, then read it back again. An immediate
    `run` is a separate live-publication action, including while the job is paused.
 

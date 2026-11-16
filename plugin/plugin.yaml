@@ -1,0 +1,5 @@
+name: pulse-card-actions
+version: 1.0.0
+description: Expand a Pulse card in context or remove its inline buttons immediately.
+author: Kuro96
+license: MIT

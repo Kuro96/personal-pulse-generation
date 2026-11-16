@@ -4,7 +4,9 @@ A personal briefing workflow for Hermes: collect permitted conversations, notes,
 and existing project state; add verified external discovery; publish useful cards
 and a linked feed with cover images. A persisted random 6–8 ceiling applies per
 configured local day. Actual editions contain 1..ceiling qualified cards, with at
-most two requiring user action.
+most two requiring user action. Each card has **展开讲讲** to explain its content
+in more depth and **关闭按钮** to remove its inline buttons immediately through
+Telegram. The callback handler is bundled in `plugin/`.
 
 ## Installation
 
@@ -126,7 +128,7 @@ tracked, remove it from the index with a reviewed command such as
 `git rm --cached -- config.local.json`, then commit the index change. Existing
 history still contains earlier versions. Historical exposure needs separate
 history cleanup and credential rotation, plus coordination for existing clones.
-Current-tree review and archive checks do not establish remote-history audit status.
+Review the current tree and Git history separately.
 
 Maintain and distribute the source through this Git repository. Review the staged
 file list and diff before each commit; keep deployment values in ignored files.

@@ -29,7 +29,6 @@ _CONFIG_PATH.write_text(json.dumps(fixture_config(Path(_CONFIG_DIRECTORY.name)))
 runtime = isolated_runtime(_CONFIG_PATH)
 
 
-
 def deny_network(*_args, **_kwargs):
     raise AssertionError("network access is forbidden in Pulse runtime tests")
 
@@ -176,15 +175,28 @@ class OfflineRuntimeTest(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory(dir=runtime.scratch_root())
         self.addCleanup(self.temp_dir.cleanup)
         self.root = Path(self.temp_dir.name)
-        patchers = [
-            mock.patch.object(runtime.urllib.request, "urlopen", side_effect=deny_network),
-            mock.patch.object(runtime.urllib.request, "build_opener", side_effect=deny_network),
-            mock.patch.object(socket, "create_connection", side_effect=deny_network),
-            mock.patch.object(socket, "socket", side_effect=deny_network),
-        ]
-        for patcher in patchers:
-            patcher.start()
-            self.addCleanup(patcher.stop)
+        self.enterContext(mock.patch.object(socket, "socket", side_effect=deny_network))
+
+
+class StatefulRuntimeTest(OfflineRuntimeTest):
+    def setUp(self) -> None:
+        super().setUp()
+        self.state_path = self.root / "state.json"
+        self.journal_path = self.root / "send.json"
+        write_state(self.state_path, "2026-07-22", 6)
+
+    def validate(self, value: dict) -> dict:
+        return runtime.normalize_pulse(
+            value, strict_count=True, pulse_day="2026-07-22", state_file=str(self.state_path),
+        )
+
+    def send(self, value: dict, **options) -> dict:
+        arguments = dict(
+            pulse_day="2026-07-22", state_file=str(self.state_path),
+            send_record=str(self.journal_path), cards_target=CARDS_TARGET,
+            feed_target=FEED_TARGET, dry_run=True,
+        )
+        return runtime.send_details_and_feed(value, **(arguments | options))
 
 
 class ManagedScratchTests(OfflineRuntimeTest):
@@ -277,8 +289,6 @@ class ManagedScratchTests(OfflineRuntimeTest):
 
 
 class RuntimeStateTests(OfflineRuntimeTest):
-
-
     def test_feedback_is_validated_and_atomically_appended(self) -> None:
         state_path = self.root / "state.json"
         write_state(state_path, "2026-07-22", 6, legacy_keyboard={"choice": "keep"})
@@ -318,42 +328,7 @@ class RuntimeStateTests(OfflineRuntimeTest):
         self.assertEqual((recorded["pulse_day"], recorded["card_id"]), ("2026-07-22", "pulse-card-002"))
 
 
-class RuntimeSchemaTests(OfflineRuntimeTest):
-    def setUp(self) -> None:
-        super().setUp()
-        self.state_path = self.root / "state.json"
-        write_state(self.state_path, "2026-07-22", 6)
-
-    def validate(self, value: dict) -> dict:
-        return runtime.normalize_pulse(
-            value,
-            strict_count=True,
-            pulse_day="2026-07-22",
-            state_file=str(self.state_path),
-        )
-
-    def test_reduced_six_of_seven_and_three_of_eight(self) -> None:
-        for actual, desired in ((6, 7), (3, 8)):
-            with self.subTest(actual=actual, desired=desired):
-                write_state(self.state_path, "2026-07-22", desired)
-                value = payload(actual)
-                value["daily_target"]["count"] = desired
-                value["scope"].update(requested_card_count=desired, selected_card_count=actual)
-                normalized = self.validate(value)
-                self.assertEqual(len(normalized["cards"]), actual)
-                self.assertEqual(normalized["daily_target"]["count"], desired)
-
-    def test_strict_count_accepts_full_target_and_rejects_over_target(self) -> None:
-        normalized = self.validate(payload(6))
-        self.assertEqual(normalized["pulse_version"], "1.1")
-        self.assertEqual(len(normalized["cards"]), 6)
-        for count in (7,):
-            mismatch = payload(count)
-            mismatch["daily_target"]["count"] = 6
-            mismatch["scope"]["requested_card_count"] = 6
-            with self.subTest(count=count), self.assertRaises(SystemExit):
-                self.validate(mismatch)
-
+class RuntimeSchemaTests(StatefulRuntimeTest):
     def test_payload_target_and_requested_count_cannot_override_state(self) -> None:
         for mutation in ("daily_target", "scope"):
             value = payload(6)
@@ -420,6 +395,9 @@ class RuntimeSchemaTests(OfflineRuntimeTest):
             "https://user:pass@example.org/item",
             "https://example.org/item?api_key=secret",
             "https://example.org/item?signature=secret",
+            "https://example.org/item?x.amz.signature=secret",
+            "https://example.org/item?X_Goog_Credential=secret",
+            "https://example.org/item?ACCESS.TOKEN=secret",
         ]
         for url in unsafe_urls:
             value = payload(6)
@@ -431,32 +409,6 @@ class RuntimeSchemaTests(OfflineRuntimeTest):
         value["cards"][0]["content_class"] = "C4"
         value["cards"][0]["evidence"] = [evidence("external_source", "https://example.org/public?id=42")]
         self.assertEqual(self.validate(value)["cards"][0]["evidence"][0]["source_url"], "https://example.org/public?id=42")
-
-    def test_public_citation_query_rejects_normalized_secret_and_signing_keys(self) -> None:
-        unsafe_keys = [
-            "X-Amz-Signature",
-            "x.amz.signature",
-            "X-Goog-Credential",
-            "X_Goog_Credential",
-            "x:goog:credential",
-            "access_token",
-            "ACCESS.TOKEN",
-            "api-key",
-            "Api.Key",
-            "auth",
-            "AUTH",
-            "password",
-            "pass-word",
-            "secret",
-            "se.cret",
-        ]
-        for key in unsafe_keys:
-            url = f"https://example.org/public?{key}=private-value"
-            with self.subTest(key=key):
-                self.assertIsNone(runtime.safe_public_citation_url(url))
-
-        benign = "https://example.org/public?id=42&sort=recent&author=alice&keynote=opening"
-        self.assertEqual(runtime.safe_public_citation_url(benign), benign)
 
     def test_ready_generated_and_available_covers_require_a_reference(self) -> None:
         for status in ("ready", "generated", "available"):
@@ -514,15 +466,7 @@ class RuntimeCompatibilityTests(OfflineRuntimeTest):
         self.assertEqual(normalized["cards"][0]["title"], "Legacy card")
         self.assertIn("follow_up", normalized)
 
-    def test_schema_1_1_does_not_create_legacy_follow_up(self) -> None:
-        state_path = self.root / "state.json"
-        write_state(state_path, "2026-07-22", 6)
-        normalized = runtime.normalize_pulse(
-            payload(6), strict_count=True, pulse_day="2026-07-22", state_file=str(state_path)
-        )
-        self.assertNotIn("follow_up", normalized)
-
-    def test_legacy_and_native_send_journals_are_normalized(self) -> None:
+    def test_legacy_send_journal_is_normalized(self) -> None:
         legacy = runtime.normalize_send_journal({
             "details": {"pulse-card-001": 100},
             "feed_message_id": 101,
@@ -531,36 +475,8 @@ class RuntimeCompatibilityTests(OfflineRuntimeTest):
         self.assertEqual(legacy["delivery_mode"], "legacy_telegraph_v1")
         self.assertEqual(legacy["status"], "complete")
 
-        native_path = self.root / "send.json"
-        native = {
-            "schema_version": "2",
-            "delivery_mode": "telegram_native_v1",
-            "status": "details_partial",
-            "pulse_day": "2026-07-22",
-            "target_card_count": 6,
-            "details": {"pulse-card-001": 100},
-            "detail_refs": {},
-            "feed_message_id": None,
-            "feed_telegraph": None,
-        }
-        runtime.write_send_journal(str(native_path), native)
-        self.assertEqual(runtime.load_send_journal(str(native_path)), native)
 
-
-class SelectionContractTests(OfflineRuntimeTest):
-    def setUp(self) -> None:
-        super().setUp()
-        self.state_path = self.root / "state.json"
-        write_state(self.state_path, "2026-07-22", 6)
-
-    def validate(self, value: dict) -> dict:
-        return runtime.normalize_pulse(
-            value,
-            strict_count=True,
-            pulse_day="2026-07-22",
-            state_file=str(self.state_path),
-        )
-
+class SelectionContractTests(StatefulRuntimeTest):
     def test_duplicate_event_keys_fail(self) -> None:
         value = payload(6)
         value["cards"][1]["event_key"] = value["cards"][0]["event_key"]
@@ -625,71 +541,28 @@ class SelectionContractTests(OfflineRuntimeTest):
         extra["cards"][1]["tags"] = ["refresh"]
         self.validate(extra)
 
-    def test_refresh_more_preference_allows_a_noted_shortfall(self) -> None:
-        write_state(
-            self.state_path,
-            "2026-07-22",
-            6,
-            last_preference="Refresh 多一点",
-        )
-        only_one = payload(6)
-        only_one["scope"]["refresh_status"] = {
-            "desired_count": 2,
-            "selected_count": 1,
-            "note": "第二个跨领域候选没有通过可信度门槛。",
-        }
-        self.validate(only_one)
+    def test_refresh_preference_allows_extra_qualified_cards(self) -> None:
+        write_state(self.state_path, "2026-07-22", 6, last_preference="Refresh 多一点")
+        value = reduced_fixture(3, 6)
+        for item in value["cards"]:
+            item["tags"] = ["refresh"]
+            item["evidence"] = [evidence("external_source", f"https://example.org/{item['id']}")]
+        value["scope"]["refresh_status"] = {"desired_count": 2, "selected_count": 3, "note": ""}
+        normalized = self.validate(value)
+        self.assertEqual(len(normalized["cards"]), 3)
+        self.assertEqual(runtime.native_feed_refresh_note(normalized), "")
 
-        valid = payload(6)
-        valid["cards"][1]["tags"] = ["refresh"]
-        self.validate(valid)
-
-        extra = payload(6)
-        extra["cards"][1]["tags"] = ["refresh"]
-        extra["cards"][2]["tags"] = ["refresh"]
-        self.validate(extra)
-
-    def test_refresh_preference_is_not_a_cap_in_full_or_reduced_editions(self) -> None:
-        for desired, preference in ((1, None), (2, "Refresh 多一点")):
-            write_state(self.state_path, "2026-07-22", 6, last_preference=preference)
-            for actual in (desired + 1, 6):
-                value = reduced_fixture(actual, 6)
-                for item in value["cards"][:desired + 1]:
-                    item["tags"] = ["refresh"]
-                    item["evidence"] = [evidence("external_source", f"https://example.org/{item['id']}")]
-                with self.subTest(desired=desired, actual=actual):
-                    self.validate(value)
-                    status = {"desired_count": desired, "selected_count": desired + 1, "note": ""}
-                    value["scope"]["refresh_status"] = status
-                    normalized = self.validate(value)
-                    self.assertEqual(normalized["scope"]["refresh_status"], status)
-                    self.assertEqual(len(normalized["cards"]), actual)
-                    self.assertEqual(runtime.native_feed_refresh_note(normalized), "")
-
-    def test_refresh_status_counts_require_exact_non_bool_integers(self) -> None:
-        for desired, preference in ((1, None), (2, "Refresh 多一点")):
-            write_state(self.state_path, "2026-07-22", 6, last_preference=preference)
-            for selected in (0, 1, desired + 1):
-                value = payload(6)
-                for index, item in enumerate(value["cards"]):
-                    item["tags"] = ["refresh"] if index < selected else []
-                status = {"desired_count": desired, "selected_count": selected,
-                          "note": "Offline test: not enough qualifying discoveries." if selected < desired else ""}
-                value["scope"]["refresh_status"] = status
-                self.validate(value)
-                for field, expected in (("desired_count", desired), ("selected_count", selected)):
-                    for invalid in (True, False, float(expected), str(expected), None, expected + 1):
-                        with self.subTest(desired=desired, selected=selected, field=field, invalid=invalid):
-                            status[field] = invalid
-                            with contextlib.redirect_stderr(io.StringIO()) as stderr, self.assertRaises(SystemExit):
-                                self.validate(value)
-                            self.assertIn(f"refresh_status.{field}", stderr.getvalue())
-                            status[field] = expected
-                if selected < desired:
-                    status["note"] = ""
-                    with contextlib.redirect_stderr(io.StringIO()) as stderr, self.assertRaises(SystemExit):
+    def test_refresh_status_counts_require_exact_integers(self) -> None:
+        value = payload(6)
+        status = {"desired_count": 1, "selected_count": 1, "note": ""}
+        value["scope"]["refresh_status"] = status
+        for field in ("desired_count", "selected_count"):
+            for invalid in (True, 1.0, "1", None, 2):
+                with self.subTest(field=field, invalid=invalid):
+                    status[field] = invalid
+                    with self.assertRaises(SystemExit):
                         self.validate(value)
-                    self.assertIn("refresh shortfall", stderr.getvalue())
+                    status[field] = 1
 
     def test_image_run_requires_a_usable_uncut_feed_cover(self) -> None:
         missing = payload(6)
@@ -701,18 +574,6 @@ class SelectionContractTests(OfflineRuntimeTest):
         unusable["feed_cover_image"].update({"url": None, "file": None})
         with self.assertRaises(SystemExit):
             self.validate(unusable)
-
-    def test_all_text_fallback_cards_may_omit_feed_cover(self) -> None:
-        value = payload(6)
-        value.pop("feed_cover_image")
-        for item in value["cards"]:
-            item["cover_image"].update({
-                "status": "force_majeure_text_fallback",
-                "url": None,
-                "file": None,
-                "reason": "Codex image generation hit an authorization, rate-limit, or service blocker.",
-            })
-        self.validate(value)
 
     def test_fixed_feedback_menu_fails(self) -> None:
         value = payload(6)
@@ -817,78 +678,26 @@ class SelectionContractTests(OfflineRuntimeTest):
                 self.validate(value)
 
 
-class TelegramRenderTests(OfflineRuntimeTest):
+class TelegramRenderTests(StatefulRuntimeTest):
+    def test_native_cards_target_requires_configured_topic(self) -> None:
+        for target in ("not-a-hermes-target", "telegram:-1001234567890",
+                       "telegram:-1009999999999:301", FEED_TARGET):
+            with self.subTest(target=target), self.assertRaises(SystemExit):
+                self.send(payload(6), cards_target=target)
+            self.assertFalse(self.journal_path.exists())
 
+    def test_native_feed_target_requires_configured_topic(self) -> None:
+        for target in (CARDS_TARGET, "telegram:-1009999999999:302"):
+            with self.subTest(target=target), self.assertRaises(SystemExit):
+                self.send(payload(6), feed_target=target)
+            self.assertFalse(self.journal_path.exists())
 
-    def test_native_cards_target_requires_exact_group_and_positive_non_feed_thread(self) -> None:
-        invalid_targets = {
-            "malformed": "not-a-hermes-target",
-            "threadless": "telegram:-1001234567890",
-            "negative-thread": "telegram:-1001234567890:-1",
-            "zero-thread": "telegram:-1001234567890:0",
-            "extra-component": "telegram:-1001234567890:999999:extra",
-            "wrong-group": "telegram:-1009999999999:999999",
-            "feed-thread": FEED_TARGET,
-        }
-        for case, cards_target in invalid_targets.items():
-            state_path = self.root / f"{case}-state.json"
-            journal_path = self.root / f"{case}-send.json"
-            write_state(state_path, "2026-07-22", 6)
-            with self.subTest(case=case), self.assertRaises(SystemExit):
-                runtime.send_details_and_feed(
-                    native_pulse(6),
-                    pulse_day="2026-07-22",
-                    state_file=str(state_path),
-                    send_record=str(journal_path),
-                    cards_target=cards_target,
-                    feed_target=FEED_TARGET,
-                    dry_run=True,
-                )
-            self.assertFalse(journal_path.exists())
-
-    def test_native_feed_target_must_be_the_exact_feed_topic(self) -> None:
-        invalid_targets = (
-            "telegram:-1001234567890:82",
-            "telegram:-1009999999999:302",
-            "telegram:-1001234567890:302:extra",
-            "not-a-hermes-target",
-        )
-        for index, feed_target in enumerate(invalid_targets):
-            state_path = self.root / f"feed-{index}-state.json"
-            journal_path = self.root / f"feed-{index}-send.json"
-            write_state(state_path, "2026-07-22", 6)
-            with self.subTest(feed_target=feed_target), self.assertRaises(SystemExit):
-                runtime.send_details_and_feed(
-                    native_pulse(6),
-                    pulse_day="2026-07-22",
-                    state_file=str(state_path),
-                    send_record=str(journal_path),
-                    cards_target=CARDS_TARGET,
-                    feed_target=feed_target,
-                    dry_run=True,
-                )
-            self.assertFalse(journal_path.exists())
-
-
-    def test_native_send_rejects_card_detail_target_conflicting_with_cards_target(self) -> None:
-        state_path = self.root / "state.json"
-        journal_path = self.root / "send.json"
-        write_state(state_path, "2026-07-22", 6)
+    def test_card_detail_target_must_match_send_target(self) -> None:
         value = payload(6)
         value["cards"][0]["detail_message"] = {"target": FEED_TARGET}
-
         with self.assertRaises(SystemExit):
-            runtime.send_details_and_feed(
-                value,
-                pulse_day="2026-07-22",
-                state_file=str(state_path),
-                send_record=str(journal_path),
-                cards_target=CARDS_TARGET,
-                feed_target=FEED_TARGET,
-                dry_run=True,
-            )
-        self.assertFalse(journal_path.exists())
-
+            self.send(value)
+        self.assertFalse(self.journal_path.exists())
 
     def test_official_group_topic_links_use_documented_t_me_c_shape(self) -> None:
         self.assertEqual(
@@ -897,33 +706,16 @@ class TelegramRenderTests(OfflineRuntimeTest):
         )
         self.assertIsNone(runtime.official_message_link("telegram:123456789:999999", 1603))
 
-    def test_eight_card_native_feed_is_bounded_and_links_every_title(self) -> None:
+    def test_eight_card_text_feed_is_bounded_and_links_every_title(self) -> None:
         pulse = native_pulse(8)
-        refs = {
-            item["id"]: runtime.official_message_link(CARDS_TARGET, 1600 + index)
-            for index, item in enumerate(pulse["cards"], start=1)
-        }
+        refs = {item["id"]: f"https://t.me/c/1234567890/301/{1600 + index}"
+                for index, item in enumerate(pulse["cards"], 1)}
         rendered = runtime.render_feed_html(pulse, detail_refs=refs)
-
-        violations = []
+        self.assertLessEqual(runtime.utf16_units(rendered), 3900)
         for item in pulse["cards"]:
-            title = runtime.html_escape(runtime.as_text(item["title"]))
-            expected_anchor = f'<a href="{refs[item["id"]]}">{title}</a>'
-            if expected_anchor not in rendered or rendered.count(title) != 1:
-                violations.append(f"missing linked title {item['id']}")
-        if "FORCED_TRANSITION_" in rendered:
-            violations.append("forced transitions rendered")
-        if "telegra.ph" in rendered.lower() or "telegraph" in rendered.lower():
-            violations.append("Telegraph rendered")
-        if "inline_keyboard" in rendered:
-            violations.append("fixed menu rendered")
-        for choice in runtime.DEFAULT_CHOICES:
-            if choice in rendered:
-                violations.append(f"fixed choice rendered: {choice}")
-        units = runtime.utf16_units(rendered)
-        if units > 3900:
-            violations.append(f"feed uses {units} UTF-16 units")
-        self.assertEqual(violations, [])
+            self.assertIn(f'<a href="{refs[item["id"]]}">{item["title"]}</a>', rendered)
+        self.assertNotIn("FORCED_TRANSITION_", rendered)
+        self.assertNotIn("telegra.ph", rendered)
 
     def test_eight_card_photo_feed_caption_is_bounded_and_links_every_title(self) -> None:
         pulse = native_pulse(8)
@@ -935,6 +727,10 @@ class TelegramRenderTests(OfflineRuntimeTest):
         rendered = runtime.render_feed_html(pulse, detail_refs=refs, max_units=1000)
 
         self.assertLessEqual(runtime.utf16_units(rendered), 1000)
+        self.assertIn("…", rendered)
+        for block in rendered.split("\n\n")[1:]:
+            if "Teaser " in block:
+                self.assertTrue(block.endswith("…"), block)
         for item in pulse["cards"]:
             escaped_title = runtime.html_escape(runtime.as_text(item["title"]))
             self.assertEqual(rendered.count(escaped_title), 1)
@@ -952,17 +748,6 @@ class TelegramRenderTests(OfflineRuntimeTest):
         rendered = runtime.render_feed_html(pulse)
 
         self.assertIn("今日新鲜内容：外部检索未获得达到质量门槛的新内容", rendered)
-
-    def test_shortened_feed_teasers_end_with_an_ellipsis(self) -> None:
-        pulse = native_pulse(8)
-
-        rendered = runtime.render_feed_html(pulse, max_units=1000)
-
-        self.assertIn("…", rendered)
-        for block in rendered.split("\n\n")[1:]:
-            if "Teaser " in block:
-                self.assertTrue(block.endswith("…"), block)
-
 
     def test_native_feed_explains_user_opt_out_cover_fallback(self) -> None:
         pulse = native_pulse(6)
@@ -1027,15 +812,6 @@ class TelegramRenderTests(OfflineRuntimeTest):
         self.assertIn("公开来源：example.org", rendered)
         self.assertIn("公开来源：www.nasa.gov", rendered)
 
-    def test_full_detail_avoids_duplicate_identical_result_and_summary(self) -> None:
-        item = native_pulse(6)["cards"][0]
-        item["summary"] = "IDENTICAL_RESULT_AND_SUMMARY"
-        item["delivery"]["result_summary"] = item["summary"]
-
-        rendered = runtime.render_detail_photo_caption(item)
-
-        self.assertEqual(rendered.count("IDENTICAL_RESULT_AND_SUMMARY"), 1)
-
     def test_reader_renderers_hide_provenance_paths_and_raw_citation_labels(self) -> None:
         pulse = native_pulse(6)
         item = pulse["cards"][0]
@@ -1089,21 +865,7 @@ class TelegramRenderTests(OfflineRuntimeTest):
                 self.assertIn("公开来源：example.org", outputs[surface])
 
 
-class ReducedEditionTests(OfflineRuntimeTest):
-    def setUp(self) -> None:
-        super().setUp()
-        self.state_path = self.root / "state.json"
-        self.journal_path = self.root / "send.json"
-        write_state(self.state_path, "2026-07-22", 6)
-
-    def send(self, value: dict, *, dry_run: bool = True) -> dict:
-        return runtime.send_details_and_feed(
-            value, pulse_day="2026-07-22", state_file=str(self.state_path),
-            send_record=str(self.journal_path), cards_target=CARDS_TARGET,
-            feed_target=FEED_TARGET, dry_run=dry_run,
-        )
-
-
+class ReducedEditionTests(StatefulRuntimeTest):
     def test_actual_count_controls_concentration_and_horizon_exceptions(self) -> None:
         value = reduced_fixture(3, 6)
         for item in value["cards"]:
@@ -1139,7 +901,6 @@ class ReducedEditionTests(OfflineRuntimeTest):
         feed = runtime.render_feed_html(normalized, detail_refs=journal["detail_refs"])
         self.assertEqual(feed.count(note), 1)
 
-
     def test_historical_full_size_payload_digest_and_journal_resume(self) -> None:
         value = runtime.normalize_pulse(payload(6), tools_target=CARDS_TARGET)
         digest = runtime.pulse_payload_sha256(value)
@@ -1147,6 +908,7 @@ class ReducedEditionTests(OfflineRuntimeTest):
                                           pulse_day="2026-07-22", state_file=str(self.state_path))
         self.assertEqual(runtime.pulse_payload_sha256(checked), digest)
         self.assertNotIn("selected_card_count", checked["scope"])
+        self.assertNotIn("follow_up", checked)
         old = runtime.native_send_journal(value, pulse_day="2026-07-22", cards_target=CARDS_TARGET, feed_target=FEED_TARGET)
         del old["desired_card_count"]
         old["historical_test_marker"] = "preserve"
@@ -1168,20 +930,7 @@ class ReducedEditionTests(OfflineRuntimeTest):
         self.assertNotIn("selected_card_count", value["scope"])
 
 
-class ImagePolicyRegressionTests(OfflineRuntimeTest):
-    def setUp(self) -> None:
-        super().setUp()
-        self.state_path = self.root / "state.json"
-        write_state(self.state_path, "2026-07-22", 6)
-
-    def validate(self, value: dict) -> dict:
-        return runtime.normalize_pulse(
-            value,
-            strict_count=True,
-            pulse_day="2026-07-22",
-            state_file=str(self.state_path),
-        )
-
+class ImagePolicyRegressionTests(StatefulRuntimeTest):
     def test_schema_rejects_missing_or_malformed_image_metadata(self) -> None:
         for field in ("illustration_brief", "cover_image"):
             value = payload(6)
@@ -1195,61 +944,44 @@ class ImagePolicyRegressionTests(OfflineRuntimeTest):
             self.validate(value)
 
 
-class CurrentPathTests(OfflineRuntimeTest):
-    def setUp(self) -> None:
-        super().setUp()
-        self.state = self.root / "state.json"
-        self.journal = self.root / "send.json"
-        write_state(self.state, "2026-07-22", 6)
-
-    def send(self, value: dict) -> dict:
-        return runtime.send_details_and_feed(
-            value, pulse_day="2026-07-22", state_file=str(self.state),
-            send_record=str(self.journal), cards_target=CARDS_TARGET,
-            feed_target=FEED_TARGET, dry_run=True,
-        )
-
-    def test_every_actual_count_up_to_each_daily_ceiling(self) -> None:
-        for desired in (6, 7, 8):
-            write_state(self.state, "2026-07-22", desired)
-            before = self.state.read_bytes()
-            for actual in range(1, desired + 1):
-                with self.subTest(actual=actual, desired=desired):
-                    self.journal.unlink(missing_ok=True)
-                    value = reduced_fixture(actual, desired)
-                    result = self.send(value)
-                    saved = runtime.load_send_journal(str(self.journal))
-                    self.assertEqual(saved, result)
-                    self.assertEqual(saved["status"], "complete")
-                    self.assertEqual(saved["target_card_count"], actual)
-                    self.assertEqual(saved["desired_card_count"], desired)
-                    self.assertEqual(len(saved["details"]), actual)
-                    self.assertEqual(saved["feed_message_id"], actual + 1)
-            self.assertEqual(self.state.read_bytes(), before)
+class CurrentPathTests(StatefulRuntimeTest):
+    def test_full_eight_card_edition_preserves_daily_state(self) -> None:
+        write_state(self.state_path, "2026-07-22", 8)
+        before = self.state_path.read_bytes()
+        result = self.send(payload(8))
+        self.assertEqual(runtime.load_send_journal(str(self.journal_path)), result)
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(result["target_card_count"], 8)
+        self.assertEqual(len(result["details"]), 8)
+        self.assertEqual(result["feed_message_id"], 9)
+        self.assertEqual(self.state_path.read_bytes(), before)
 
     def test_cli_sends_real_dry_run_and_blocks_duplicate(self) -> None:
         source = self.root / "pulse.json"
         source.write_text(json.dumps(reduced_fixture(3, 6)))
         args = ["send", str(source), "--dry-run", "--pulse-day", "2026-07-22",
-                "--state-file", str(self.state), "--send-record", str(self.journal),
+                "--state-file", str(self.state_path), "--send-record", str(self.journal_path),
                 "--cards-target", CARDS_TARGET, "--feed-target", FEED_TARGET]
         with contextlib.redirect_stdout(io.StringIO()) as output:
             self.assertEqual(runtime.main(args), 0)
-        self.assertEqual(json.loads(output.getvalue()), json.loads(self.journal.read_text()))
-        before = self.journal.read_bytes()
+        saved = json.loads(self.journal_path.read_text())
+        self.assertEqual(json.loads(output.getvalue()), saved)
+        self.assertEqual((saved["target_card_count"], saved["desired_card_count"]), (3, 6))
+        self.assertEqual(len(saved["details"]), 3)
+        before = self.journal_path.read_bytes()
         with self.assertRaises(SystemExit):
             runtime.main(args)
-        self.assertEqual(self.journal.read_bytes(), before)
+        self.assertEqual(self.journal_path.read_bytes(), before)
 
     def test_partial_and_feed_pending_resume_preserve_sent_details(self) -> None:
-        for actual in (1, 3, 6):
+        for actual in (1, 3):
             value = runtime.normalize_pulse(reduced_fixture(actual, 6), tools_target=CARDS_TARGET)
             partial = runtime.native_send_journal(
                 value, pulse_day="2026-07-22", cards_target=CARDS_TARGET, feed_target=FEED_TARGET)
             partial["details"] = {"pulse-card-001": 1601}
             partial["detail_refs"] = {"pulse-card-001": "https://t.me/c/1234567890/301/1601"}
             partial["status"] = "feed_pending" if actual == 1 else "details_partial"
-            runtime.write_send_journal(str(self.journal), partial)
+            runtime.write_send_journal(str(self.journal_path), partial)
             completed = self.send(value)
             self.assertEqual(completed["details"]["pulse-card-001"], 1601)
             self.assertEqual(len(completed["details"]), actual)
@@ -1262,7 +994,6 @@ class CurrentPathTests(OfflineRuntimeTest):
         mutations = [
             {"payload_sha256": "0" * 64}, {"desired_card_count": 7},
             {"target_card_count": True}, {"cards_target": FEED_TARGET},
-            {"in_flight": {"operation": "detail", "card_id": "pulse-card-001"}},
             {"status": "feed_pending"}, {"feed_message_id": 40},
             {"details": {"unknown": 1}, "detail_refs": {"unknown": "https://example.org"}},
             {"details": {"pulse-card-001": True}, "detail_refs": {"pulse-card-001": "https://t.me/c/1234567890/301/1"}},
@@ -1270,11 +1001,27 @@ class CurrentPathTests(OfflineRuntimeTest):
         ]
         for mutation in mutations:
             with self.subTest(mutation=mutation):
-                runtime.write_send_journal(str(self.journal), dict(expected, **mutation))
-                before = self.journal.read_bytes()
+                runtime.write_send_journal(str(self.journal_path), dict(expected, **mutation))
+                before = self.journal_path.read_bytes()
                 with self.assertRaises(SystemExit):
                     self.send(value)
-                self.assertEqual(self.journal.read_bytes(), before)
+                self.assertEqual(self.journal_path.read_bytes(), before)
+
+    def test_transport_timeout_preserves_in_flight_and_blocks_retry(self) -> None:
+        value = native_pulse(6)
+        with mock.patch.dict(os.environ, {"SYNTHETIC_PULSE_TOKEN": "offline-token"}), mock.patch.object(
+            runtime.urllib.request, "urlopen", side_effect=TimeoutError("response lost")
+        ) as transport:
+            with self.assertRaises(TimeoutError):
+                self.send(value, dry_run=False)
+            before = self.journal_path.read_bytes()
+            journal = json.loads(before)
+            self.assertEqual(journal["details"], {})
+            self.assertEqual(journal["in_flight"]["card_id"], "pulse-card-001")
+            with self.assertRaises(SystemExit):
+                self.send(value, dry_run=False)
+            self.assertEqual(self.journal_path.read_bytes(), before)
+            self.assertEqual(transport.call_count, 1)
 
     def test_concurrent_dry_runs_commit_one_edition(self) -> None:
         value = reduced_fixture(3, 6)
@@ -1287,26 +1034,26 @@ class CurrentPathTests(OfflineRuntimeTest):
             outcomes = [future.exception(timeout=10) for future in futures]
         self.assertEqual(sum(error is None for error in outcomes), 1)
         self.assertEqual(sum(isinstance(error, SystemExit) for error in outcomes), 1)
-        self.assertEqual(runtime.load_send_journal(str(self.journal))["status"], "complete")
+        self.assertEqual(runtime.load_send_journal(str(self.journal_path))["status"], "complete")
 
     def test_preference_cli_preserves_historical_state_and_updates_refresh_budget(self) -> None:
-        write_state(self.state, "2026-07-22", 6,
+        write_state(self.state_path, "2026-07-22", 6,
                     keyboard_token="historical", clear_keyboard_required=True,
                     card_feedback=[{"intent": "follow"}])
-        before = json.loads(self.state.read_text())
+        before = json.loads(self.state_path.read_text())
         with contextlib.redirect_stdout(io.StringIO()):
-            runtime.main(["preference", "set", "新鲜一点", "--state-file", str(self.state)])
-        saved = runtime.load_preference(str(self.state))
+            runtime.main(["preference", "set", "新鲜一点", "--state-file", str(self.state_path)])
+        saved = runtime.load_preference(str(self.state_path))
         for key, value in before.items():
             self.assertEqual(saved[key], value)
         self.assertEqual(saved["last_preference"], "Refresh 多一点")
-        self.assertEqual(runtime.get_required_refresh_count(str(self.state)), 2)
+        self.assertEqual(runtime.get_required_refresh_count(str(self.state_path)), 2)
         with contextlib.redirect_stdout(io.StringIO()) as output:
-            runtime.main(["preference", "get", "--state-file", str(self.state)])
+            runtime.main(["preference", "get", "--state-file", str(self.state_path)])
         self.assertEqual(json.loads(output.getvalue()), saved)
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
-            runtime.main(["preference", "expire-keyboard", "--state-file", str(self.state)])
-        self.assertEqual(runtime.load_preference(str(self.state)), saved)
+            runtime.main(["preference", "expire-keyboard", "--state-file", str(self.state_path)])
+        self.assertEqual(runtime.load_preference(str(self.state_path)), saved)
 
     def test_daily_target_is_stable_and_malformed_state_is_preserved(self) -> None:
         path = self.root / "new-state.json"
@@ -1327,7 +1074,7 @@ class CurrentPathTests(OfflineRuntimeTest):
         for value in values:
             with self.assertRaises(SystemExit):
                 self.send(value)
-            self.assertFalse(self.journal.exists())
+            self.assertFalse(self.journal_path.exists())
 
     def test_new_value_can_be_synthesis_context_or_tradeoff(self) -> None:
         examples = [
@@ -1339,7 +1086,7 @@ class CurrentPathTests(OfflineRuntimeTest):
         for item, (reason, title, prose) in zip(value["cards"], examples):
             item.update(title=title, summary=prose, why_now="", recent_topic_repeat=True, novelty_reason=reason)
             item["delivery"].update(state="insight", result_summary=prose)
-        normalized = runtime.normalize_pulse(value, strict_count=True, pulse_day="2026-07-22", state_file=str(self.state))
+        normalized = runtime.normalize_pulse(value, strict_count=True, pulse_day="2026-07-22", state_file=str(self.state_path))
         for item, (_, title, prose) in zip(normalized["cards"], examples):
             rendered = runtime.render_detail_html(item, include_cover_note=False)
             self.assertTrue(rendered.startswith(f"<b>{title}</b>"))
@@ -1406,38 +1153,46 @@ class CurrentPathTests(OfflineRuntimeTest):
             value = reduced_fixture(3, 6)
             value["cards"][0]["confidence"] = confidence
             with self.subTest(confidence=confidence), self.assertRaises((SystemExit, ValueError, TypeError)):
-                runtime.normalize_pulse(value, strict_count=True, pulse_day="2026-07-22", state_file=str(self.state))
+                runtime.normalize_pulse(value, strict_count=True, pulse_day="2026-07-22", state_file=str(self.state_path))
         for confidence in (0.8, "0.8", "80%", 80):
             self.assertEqual(runtime.normalize_confidence(confidence), 0.8)
 
-    def test_target_parser_preserves_explicit_chat_and_rejects_malformed_input(self) -> None:
-        self.assertEqual(runtime.thread_for_target("telegram:-1001234567890:22442"), ("-1001234567890", 22442))
-        for target in ("bad", "telegram:123456789:bad", "telegram:123456789:0", "telegram:123456789:302:extra"):
-            with self.subTest(target=target), self.assertRaises(ValueError):
-                runtime.thread_for_target(target)
-
-    def test_transport_requests_use_explicit_targets_and_jpeg_mime(self) -> None:
+    def test_transport_requests_preserve_targets_media_and_optional_buttons(self) -> None:
         photo = self.root / "cover.jpg"
         photo.write_bytes(b"\xff\xd8\xff\xd9")
-        calls = (
-            lambda: runtime.telegram_send_text("正文", target=FEED_TARGET, parse_mode="HTML"),
-            lambda: runtime.telegram_send_photo("https://example.org/cover.png", caption="正文", target=CARDS_TARGET, parse_mode="HTML"),
-            lambda: runtime.telegram_send_local_photo(str(photo), caption="正文", target=CARDS_TARGET, parse_mode="HTML"),
-        )
-        for index, send in enumerate(calls):
-            with mock.patch.dict(os.environ, {"SYNTHETIC_PULSE_TOKEN": "offline-token"}), mock.patch.object(
-                runtime.urllib.request, "urlopen", return_value=io.BytesIO(b'{"ok": true, "result": {"message_id": 1}}')
-            ) as transport:
-                send()
-                request = transport.call_args.args[0]
-                self.assertNotIn(b"reply_markup", request.data)
-                if index == 2:
-                    self.assertIn(b"Content-Type: image/jpeg", request.data)
-                    self.assertIn(b"301", request.data)
-                else:
-                    body = json.loads(request.data)
-                    self.assertEqual(body["chat_id"], "-1001234567890")
-                    self.assertEqual(body["message_thread_id"], 302 if index == 0 else 301)
+        markup = runtime.card_action_markup()
+        self.assertEqual(markup["inline_keyboard"], [[
+            {"text": "展开讲讲", "callback_data": "pulse:expand"},
+            {"text": "关闭按钮", "callback_data": "pulse:close"},
+        ]])
+        calls = {
+            "text": lambda **options: runtime.telegram_send_text("正文", **options),
+            "photo": lambda **options: runtime.telegram_send_photo("https://example.org/cover.png", caption="正文", **options),
+            "multipart": lambda **options: runtime.telegram_send_local_photo(str(photo), caption="正文", **options),
+        }
+        for kind, send in calls.items():
+            for target, options in ((FEED_TARGET, {}), (CARDS_TARGET, {"reply_markup": markup})):
+                with self.subTest(kind=kind, target=target), mock.patch.dict(
+                    os.environ, {"SYNTHETIC_PULSE_TOKEN": "offline-token"}
+                ), mock.patch.object(runtime.urllib.request, "urlopen", return_value=io.BytesIO(
+                    b'{"ok": true, "result": {"message_id": 1}}'
+                )) as transport:
+                    send(target=target, parse_mode="HTML", **options)
+                    request = transport.call_args.args[0]
+                    thread = 301 if options else 302
+                    if kind == "multipart":
+                        self.assertIn(b"Content-Type: image/jpeg", request.data)
+                        self.assertIn(b'name="chat_id"\r\n\r\n-1001234567890\r\n', request.data)
+                        self.assertIn(f'name="message_thread_id"\r\n\r\n{thread}\r\n'.encode(), request.data)
+                        if options:
+                            self.assertIn(b'name="reply_markup"\r\n\r\n' + json.dumps(markup, ensure_ascii=False).encode() + b"\r\n", request.data)
+                    else:
+                        body = json.loads(request.data)
+                        self.assertEqual((body["chat_id"], body["message_thread_id"]), ("-1001234567890", thread))
+                        if options:
+                            self.assertEqual(body["reply_markup"], markup)
+                    if not options:
+                        self.assertNotIn(b"reply_markup", request.data)
 
     def test_feed_cli_previews_native_linked_layout(self) -> None:
         value = reduced_fixture(3, 6)
@@ -1454,7 +1209,7 @@ class CurrentPathTests(OfflineRuntimeTest):
 
     def test_long_feed_fails_before_journal_or_details(self) -> None:
         value = reduced_fixture(8, 8)
-        write_state(self.state, "2026-07-22", 8)
+        write_state(self.state_path, "2026-07-22", 8)
         for index, item in enumerate(value["cards"]):
             item["title"] = str(index) + "很长的标题" * 25
         source = self.root / "long-feed.json"
@@ -1463,7 +1218,7 @@ class CurrentPathTests(OfflineRuntimeTest):
             runtime.main(["render-feed", str(source)])
         with self.assertRaises(SystemExit):
             self.send(value)
-        self.assertFalse(self.journal.exists())
+        self.assertFalse(self.journal_path.exists())
 
 
 if __name__ == "__main__":

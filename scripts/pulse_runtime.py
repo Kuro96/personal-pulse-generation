@@ -269,17 +269,26 @@ def fit_escaped_text(value: Any, budget: int) -> str:
     return html_escape(shortened) + "…"
 
 
-def telegram_send_text(text: str, *, target: str, parse_mode: str | None = None) -> dict[str, Any]:
+def card_action_markup() -> dict[str, Any]:
+    return {"inline_keyboard": [[
+        {"text": "展开讲讲", "callback_data": "pulse:expand"},
+        {"text": "关闭按钮", "callback_data": "pulse:close"},
+    ]]}
+
+
+def telegram_send_text(text: str, *, target: str, parse_mode: str | None = None, reply_markup: dict | None = None) -> dict[str, Any]:
     chat_id, thread_id = thread_for_target(target)
     payload: dict[str, Any] = {"chat_id": chat_id, "text": text, "disable_web_page_preview": True}
     if thread_id is not None:
         payload["message_thread_id"] = thread_id
     if parse_mode:
         payload["parse_mode"] = parse_mode
+    if reply_markup is not None:
+        payload["reply_markup"] = reply_markup
     return telegram_api("sendMessage", payload)
 
 
-def telegram_send_photo(photo: str, *, caption: str, target: str, parse_mode: str | None = None) -> dict[str, Any]:
+def telegram_send_photo(photo: str, *, caption: str, target: str, parse_mode: str | None = None, reply_markup: dict | None = None) -> dict[str, Any]:
     """Send a URL or Telegram file ID as a photo."""
     chat_id, thread_id = thread_for_target(target)
     payload: dict[str, Any] = {"chat_id": chat_id, "photo": photo, "caption": caption}
@@ -287,10 +296,12 @@ def telegram_send_photo(photo: str, *, caption: str, target: str, parse_mode: st
         payload["message_thread_id"] = thread_id
     if parse_mode:
         payload["parse_mode"] = parse_mode
+    if reply_markup is not None:
+        payload["reply_markup"] = reply_markup
     return telegram_api("sendPhoto", payload)
 
 
-def telegram_send_local_photo(photo_path: str, *, caption: str, target: str, parse_mode: str | None = None) -> dict[str, Any]:
+def telegram_send_local_photo(photo_path: str, *, caption: str, target: str, parse_mode: str | None = None, reply_markup: dict | None = None) -> dict[str, Any]:
     """Upload a local image file with an optional caption using multipart/form-data."""
     boundary = f"----pulse{int(time.time() * 1000)}"
     chat_id, thread_id = thread_for_target(target)
@@ -300,6 +311,8 @@ def telegram_send_local_photo(photo_path: str, *, caption: str, target: str, par
 
     if parse_mode:
         fields["parse_mode"] = parse_mode
+    if reply_markup is not None:
+        fields["reply_markup"] = json.dumps(reply_markup, ensure_ascii=False)
     body = bytearray()
     for name, value in fields.items():
         body.extend(f"--{boundary}\r\n".encode())
@@ -1396,14 +1409,17 @@ def send_details_and_feed(
                 cover_ref = card_cover_ref(card)
                 if cover_ref and Path(cover_ref).exists():
                     result = telegram_send_local_photo(
-                        cover_ref, caption=detail_html, target=cards_target, parse_mode="HTML"
+                        cover_ref, caption=detail_html, target=cards_target, parse_mode="HTML",
+                        reply_markup=card_action_markup()
                     )
                 else:
                     result = telegram_send_photo(
-                        cover_ref, caption=detail_html, target=cards_target, parse_mode="HTML"
+                        cover_ref, caption=detail_html, target=cards_target, parse_mode="HTML",
+                        reply_markup=card_action_markup()
                     )
             else:
-                result = telegram_send_text(detail_html, target=cards_target, parse_mode="HTML")
+                result = telegram_send_text(detail_html, target=cards_target, parse_mode="HTML",
+                                            reply_markup=card_action_markup())
             message_id = telegram_result_message_id(result)
             details[card["id"]] = message_id
             detail_ref = official_message_link(cards_target, message_id)

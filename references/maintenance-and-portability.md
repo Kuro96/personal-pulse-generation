@@ -10,7 +10,9 @@ Keep these aligned when behavior changes:
 
 1. Main skill and focused references.
 2. `templates/daily_pulse_cron_prompt.md`.
-3. Runtime validation/rendering and meaningful local tests.
+3. Runtime validation/rendering, the bundled card-action plugin, and focused tests.
+   Keep tests at public behavior boundaries; consolidate repeated setup and remove
+   overlapping scenarios instead of reducing only the displayed method count.
 4. The deployed daily job's prompt, attached skills, tool availability, workdir,
    schedule, and result routes, when deployment is authorized.
 
