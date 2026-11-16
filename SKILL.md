@@ -51,8 +51,10 @@ or explicitly requested editions.
 
 The bundled `pulse-card-actions` plugin routes this click as the authorized
 reader's message with the original card as reply context. **关闭按钮** removes
-all inline buttons from that card through Telegram immediately, outside the agent
-turn. Card content and publication journals remain available. See `INSTALL.md`
+all inline buttons through a direct Telegram API call after the gateway receives
+the callback, outside the agent turn. Telegram's inline keyboard has no client-only
+hide action: update dispatch and network latency still affect visible removal.
+Card content and publication journals remain available. See `INSTALL.md`
 for installing the plugin alongside the skill.
 
 ## Daily contract

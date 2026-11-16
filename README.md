@@ -5,8 +5,8 @@ and existing project state; add verified external discovery; publish useful card
 and a linked feed with cover images. A persisted random 6–8 ceiling applies per
 configured local day. Actual editions contain 1..ceiling qualified cards, with at
 most two requiring user action. Each card has **展开讲讲** to explain its content
-in more depth and **关闭按钮** to remove its inline buttons immediately through
-Telegram. The callback handler is bundled in `plugin/`.
+in more depth and **关闭按钮** to remove its inline buttons through a direct
+Telegram API call, outside the agent turn. The callback handler is bundled in `plugin/`.
 
 ## Installation
 

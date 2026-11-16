@@ -61,8 +61,10 @@ Verify the skills are discoverable through `skill_view` or `hermes skills list`.
 The repository's `plugin/` directory supplies **展开讲讲** and **关闭按钮**.
 It registers a scoped callback handler with Hermes's existing Telegram adapter.
 Expansion enters the normal agent conversation with the clicked card quoted;
-closing edits only that message's keyboard directly through Telegram, so it works
-while the agent is busy. Telegram stores the removed keyboard across restarts.
+closing edits only that message's keyboard directly through Telegram, outside the
+agent turn. Visible removal still depends on gateway dispatch and the network
+round trip; Telegram provides no client-only hide action for inline buttons.
+Telegram stores the removed keyboard across restarts.
 
 Set `PLUGINS_DIR` to the verified active profile's plugin directory. For a fresh
 installation, link the plugin from the canonical skill checkout and enable it:
