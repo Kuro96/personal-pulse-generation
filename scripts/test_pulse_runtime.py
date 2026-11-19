@@ -774,6 +774,35 @@ class TelegramRenderTests(StatefulRuntimeTest):
         self.assertNotIn("配图：", rendered)
         self.assertLessEqual(runtime.utf16_units(rendered), 3900)
 
+    def test_public_link_follows_supported_paragraph_on_both_surfaces(self) -> None:
+        item = native_pulse(6)["cards"][0]
+        item["summary"] = "The folding map now shows the winter route."
+        item["why_now"] = "Keep the map for the next walk."
+        url = "https://example.org/map"
+        source = {**evidence("external_source", url), "claim": item["summary"]}
+        item["evidence"] = [source, source.copy()]
+        for render in (runtime.render_detail, runtime.render_detail_photo_caption):
+            text = render(item)
+            paragraph = next(p for p in text.split("\n\n") if item["summary"] in p)
+            self.assertIn(url, paragraph)
+            self.assertEqual(text.count(url), 1)
+            self.assertLess(text.index(url), text.index(item["why_now"]))
+
+    def test_private_or_unsafe_matching_evidence_leaves_prose_unlinked(self) -> None:
+        item = native_pulse(6)["cards"][0]
+        item["evidence"] = []
+        renderers = (runtime.render_detail, runtime.render_detail_photo_caption)
+        plain = [render(item) for render in renderers]
+        item["evidence"] = [
+            {**evidence(kind, url), "claim": item["summary"], "publicly_renderable": public}
+            for kind, url, public in [
+                ("external_source", "https://example.org/draft", False),
+                ("project_state", "https://example.org/project", True),
+                ("external_source", "https://example.org/map?token=private", True),
+            ]
+        ]
+        self.assertEqual([render(item) for render in renderers], plain)
+
     def test_full_detail_keeps_delivery_result_summary_and_safe_public_citation(self) -> None:
         item = native_pulse(6)["cards"][0]
         item["summary"] = "Optional context " + "😀<&>" * 350

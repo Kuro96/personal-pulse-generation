@@ -171,13 +171,7 @@ def detail_paragraphs(card: dict[str, Any]) -> list[str]:
 
 def render_detail_html(card: dict[str, Any], *, include_cover_note: bool = True) -> str:
     parts = [f"<b>{html_escape(reader_surface_text(card['title']))}</b>"]
-    parts.extend(html_escape(paragraph) for paragraph in detail_paragraphs(card))
-    citations = public_citations(card)
-    if citations:
-        parts.append("\n".join(
-            f'• <a href="{html_attribute_escape(url)}">{html_escape(label)}</a>'
-            for url, label in citations
-        ))
+    parts.extend(render_cited_paragraphs(card, as_html=True))
     cover = card.get("cover_image") or {}
     cover_url = safe_public_citation_url(cover.get("url"))
     if include_cover_note and cover_url:
@@ -708,18 +702,33 @@ def public_citation_label(url: str) -> str:
     return f"公开来源：{host}" if host else "公开来源"
 
 
-def public_citations(card: dict[str, Any]) -> list[tuple[str, str]]:
-    citations: list[tuple[str, str]] = []
-    seen: set[str] = set()
-    for evidence in card.get("evidence", []):
-        if evidence.get("source_type") != "external_source" or evidence.get("publicly_renderable") is not True:
+def render_cited_paragraphs(card: dict[str, Any], *, as_html: bool) -> list[str]:
+    paragraphs = detail_paragraphs(card)
+    rendered = [html_escape(p) if as_html else p for p in paragraphs]
+    # A repeated URL can acquire a placement from a later evidence item.
+    placements: dict[str, int | None] = {}
+    for item in card.get("evidence", []):
+        if item.get("source_type") != "external_source" or item.get("publicly_renderable") is not True:
             continue
-        url = safe_public_citation_url(evidence.get("source_url"))
-        if not url or url in seen:
-            continue
-        citations.append((url, public_citation_label(url)))
-        seen.add(url)
-    return citations
+        url = safe_public_citation_url(item.get("source_url"))
+        if url and placements.get(url) is None:
+            claim = as_text(item.get("claim"))
+            placements[url] = next((i for i, p in enumerate(paragraphs) if claim and claim in p), None)
+
+    unmatched = []
+    for url, index in placements.items():
+        label = public_citation_label(url)
+        if as_html:
+            link = f'<a href="{html_attribute_escape(url)}">{html_escape(label)}</a>'
+        else:
+            link = f"[{label}]({url.replace('(', '%28').replace(')', '%29')})"
+        if index is None:
+            unmatched.append(("• " if as_html else "- ") + link)
+        else:
+            rendered[index] += " " + link
+    if unmatched:
+        rendered.append("\n".join(unmatched))
+    return rendered
 
 
 def usable_cover_url(value: Any) -> bool:
@@ -1076,18 +1085,8 @@ def normalize_pulse(
     return out
 
 
-def evidence_md(card: dict[str, Any]) -> str:
-    lines = [
-        f"- [{label}]({url.replace('(', '%28').replace(')', '%29')})"
-        for url, label in public_citations(card)
-    ]
-    return "\n".join(lines) or "- 未提供可公开依据"
-
-
 def render_detail(card: dict[str, Any]) -> str:
-    parts = [f"## {reader_surface_text(card['title'])}", *detail_paragraphs(card)]
-    if public_citations(card):
-        parts.append(evidence_md(card))
+    parts = [f"## {reader_surface_text(card['title'])}", *render_cited_paragraphs(card, as_html=False)]
     return "\n\n".join(parts)
 
 

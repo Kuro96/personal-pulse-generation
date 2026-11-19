@@ -55,7 +55,11 @@ load `cooperative-answering` in its own context.
    user action. Recheck deduplication and exact coverage exceptions after selection.
 6. Draft schema 1.1 cards with evidence, delivery result, uncertainty/confidence,
    privacy, feedback association, and illustration briefs. Write title and natural
-   paragraphs in `user.language` with the useful substance first. Keep internal assessment,
+   paragraphs in `user.language`: name the subject, explain the finding with a concrete
+   comparison, example, or prior state, and say why it matters. Read the card on its
+   own. For a useful public link, copy the supported sentence into the external
+   evidence `claim`, supply its safe `source_url`, and set `publicly_renderable: true`.
+   Links are optional. Keep internal assessment,
    provenance, QA discussion, and recurring 已交付洞察/摘要/为什么现在 labels out of
    the reading format. The publisher applies its own cooperative-answering edit
    to the complete merged detail text and short feed teasers.

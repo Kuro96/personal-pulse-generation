@@ -87,6 +87,12 @@ private evidence uses false. `source_label` is optional internal context. Reader
 citation labels derive from the safe URL domain. Credential/signing-like query
 parameters fail public citation checks. `source_ref` stays internal.
 
+For inline placement, write the supported sentence in a visible detail field
+(e.g. `summary` or `delivery.result_summary`) and use that exact sentence as the
+external evidence `claim`. The renderer places the domain link at the end of the
+first matching paragraph. Each approved URL appears once; unmatched URLs retain
+the source-list layout. Placement uses existing prose and adds no required field.
+
 ## Covers and delivery binding
 
 Each cover has `status`, `url`, `file`, and nonempty `alt`. Use `generated` for

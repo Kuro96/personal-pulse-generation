@@ -50,7 +50,7 @@ card-specific conversation; the daily publication sequence applies to scheduled
 or explicitly requested editions.
 
 The bundled `pulse-card-actions` plugin routes this click as the authorized
-reader's message with the original card as reply context. **关闭按钮** removes
+reader's message with the original card as reply context. Accepted expansions remove both buttons and run in click order within each chat/topic. The next expansion waits for final text delivery; failure or a 15-minute timeout offers **重试展开** on the original card and releases the queue. A timed-out reply may still arrive. Pending requests are held in gateway memory. **关闭按钮** removes
 all inline buttons through a direct Telegram API call after the gateway receives
 the callback, outside the agent turn. Telegram's inline keyboard has no client-only
 hide action: update dispatch and network latency still affect visible removal.
@@ -174,8 +174,13 @@ sources. Then select the eligible set; record actual separately from desired.
 ### 5. Draft for the reader
 
 Write a useful title followed by natural paragraphs in `user.language`. Open with the result,
-explanation, or comparison; weave current relevance into the prose. Add safe public
-citations where useful and a small action only when needed.
+explanation, or comparison. Name the subject and give the detail that makes the
+result intelligible on its own: the prior state, a worked example, or the tradeoff
+that matters now. For example, replace “the route changed again” with “the winter
+bus skips the lakeside stop, so the library is now the nearest stop to the trail.”
+When a public source helps, use its supported sentence as the external evidence
+`claim` so the detail renderer places the link beside that paragraph. Personal
+insights can stand on the strength of the explanation alone.
 
 The reader sees the substance. Candidate assessments, uncertainty/confidence fields,
 private provenance, and QA discussion stay internal. Detail prose uses ordinary
